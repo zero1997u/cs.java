@@ -3,6 +3,9 @@
     + [保存数据到bean中](#-----bean-)
       - [优化版：](#----)
 
+<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
+
+
 # JavaWeb
 
 ## 1.文件上传
