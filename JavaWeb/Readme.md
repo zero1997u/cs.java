@@ -508,3 +508,664 @@ public class ServletSession extends HttpServlet {
 请求头中包含了Cookie请求头，此时响应头中没有再次响应set-Cookie了
 
 原因在于cookie请求头中返回的JSESSIONID是一个有效的session id，服务器根据id找到了对应的session对象
+
+关闭浏览器重新打开，你会发现此时又重新生成了一个新的session
+
+原因在于：session传递给客户端时，内部设置的cookie的maxage为负数，仅在当前会话内有效，关闭浏览器，则cookie失效，cookie失效，则请求的时候不会携带JSESSIONNID，当遇到getSession这句代码时，就会触发逻辑,去判断是否有携带一个有效的JSESSIONID，如果没有，则重新创建一个新的session对象，把session的id通过cookie传回去。
+
+### 2.2.2问题一：关闭浏览器，session对象会销毁吗？
+
+不会。那么会一直存在吗？其实也不会。一段时间不使用的话，会被销毁。
+
+### 2.2.3问题二：关闭浏览器，session里面的数据会怎么样？
+
+session对象以及session里面的数据，全部处于一种不可达的状态。不可访问到。
+
+### 2.2.4问题三：关闭服务器，session对象会销毁吗？
+
+会。关闭服务器或者卸载应用都会销毁session对象。
+
+### 2.2.5存取数据
+
+setAttribute getAttribute removeAttribute
+
+session域、context、request域
+
+Context：当前应用内只有一个。
+
+Session：当前应用内有多少个浏览器，就有多少个session。范围也比较广。不同的servlet之间也可以进行共享数据。
+
+```java
+@WebServlet("/session")
+public class ServletSession extends HttpServlet {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {}
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        HttpSession session = request.getSession();
+        System.out.println(session);
+        //cookie的那么必须为JSESSIONID
+        Cookie cookie = new Cookie("JSESSIONID", session.getId());
+        cookie.setMaxAge(60 * 60);
+        response.addCookie(cookie);
+        session.setAttribute("name","session");
+        String id = session.getId();
+        System.out.println(id);
+    }
+}
+```
+
+session中存数据，在session2中取数据
+
+```java
+@WebServlet("/session2")
+public class ServletSession2 extends HttpServlet {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {}
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        HttpSession session = request.getSession();
+        System.out.println(session);
+        System.out.println(session.getId());
+        String name = (String) session.getAttribute("name");
+        System.out.println(name);
+    }
+}
+```
+
+### 2.2.6session中的数据默认是会话级别的，关闭浏览器则失效
+
+创建session时，发送给浏览器的cookie是会话级别的，仅存在浏览器内存中，关闭浏览器，则cookie失效。
+
+
+
+如果想持久化保存，则需要设置maxAge：
+
+### 2.2.7关闭服务器，session中的数据会丢失吗？
+
+不会。但是在IDEA中你可能会看到不同的结果，但是这是由于IDEA造成的，不是session原本的性质。
+
+如何去观察呢？需要用到一个tomcat manager管理系统
+
+1.webapps目录下manager不要删
+
+2.到tomcat的配置文件 tomcat-users.xml文件
+
+<role rolename="manager-gui"/>
+
+ <user username="tomcat" password="tomcat" roles="manager-gui"/>
+
+配置上面两行代码。
+
+3.重新启动IDEA的tomcat，让他读取配置文件
+
+4.域名:端口号/manager
+
+到管理系统中将应用卸载，然后重新启动
+
+![](img/session3.png)
+
+当应用被卸载或者服务器被关闭，内存中的session数据会被序列化到硬盘中，当应用重新被加载或者服务器开启，序列化的session文件会被重新读取到内存中，里面存储的sessionid会被分给一个新的session对象，同时将数据也一并给这个session对象。
+
+### 2.2.8session的生命周期
+
+session的创建：
+
+Request.getSession()/getSession(boolean create)
+
+session的销毁：
+
+关闭服务器、应用卸载session对象会被销毁
+
+但是session中的数据不会丢失，session可以序列化
+
+对于session中的数据而言，数据消失的方法有如下：
+
+1.session.removeAttribute
+
+2.Session.invalidate()
+
+3.一段时间不访问，session中的数据失效
+
+![](img/session4.png)
+
+### 2.2.9案例1：购物车
+
+#### 2.2.9.1Druid.properties文件放在哪
+
+![](img/session5.png)
+
+可以放在src目录下，那么在最终部署目录中，位于classes目录下。
+
+位于该目录下，有一个好处，就是可以利用类加载器来获取绝对路径。
+
+c3p0-config.xml文件,放在src目录下，文件名称不要变，这个时候就可以直接得到datasource。
+
+```java
+		Connection connection = null;
+        PreparedStatement psmt = null;
+        ResultSet resultSet = null;
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+             connection = DriverManager.getConnection("", "", "");
+             psmt = connection.prepareStatement("select * from product");
+             resultSet = psmt.executeQuery();
+            List<Product> productList = new ArrayList<>();
+            while (resultSet.next()){
+                String name = resultSet.getString("name");
+                double price = resultSet.getDouble("price");
+                Product product = new Product(name, price);
+                productList.add(product);
+            }
+            //处理完毕list拿到
+        } catch (ClassNotFoundException | SQLException e) {
+            e.printStackTrace();
+        }finally {
+            if(connection != null){
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            if(psmt != null){
+                try {
+                    psmt.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            if(resultSet != null){
+                try {
+                    resultSet.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+```
+
+上面是标准的JDBC代码。但是实际开发过程中我们不会去这么写。
+
+频繁的创建销毁connection对象，顶不住。数据库连接池
+
+```java
+//druid.properties
+driverClassName=com.mysql.jdbc.Driver
+url=jdbc:mysql://localhost:3306/22_db?characterEncoding=utf-8
+username=root
+password=123456
+filters=stat
+initialSize=2
+maxActive=300
+maxWait=60000
+timeBetweenEvictionRunsMillis=60000
+minEvictableIdleTimeMillis=300000
+validationQuery=SELECT 1
+testWhileIdle=true
+testOnBorrow=false
+testOnReturn=false
+poolPreparedStatements=false
+maxPoolPreparedStatementPerConnectionSize=200
+```
+
+```java
+//DruidUtils
+package com.cskaoyan.cart.utils;
+
+import com.alibaba.druid.pool.DruidDataSourceFactory;
+
+import javax.sql.DataSource;
+import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Properties;
+
+public class DruidUtils {
+
+    private static DataSource dataSource;
+
+    static {
+        //Druid 符合java数据库连接的规范的 所以肯定有一个datasource
+        //如果放在WEB-INF下，必须要提供context或者相关
+        //但是如果这么做，工具类就无法在se项目中使用
+        //可以利用类加载器去获取一个绝对路径
+        //类加载器有一个API可以直接定位到classes目录
+        try {
+            //要求就是文件必须放置在src目录下
+            InputStream inputStream = DruidUtils.class.getClassLoader().
+                    getResourceAsStream("druid.properties");
+            Properties properties = new Properties();
+            properties.load(inputStream);
+            dataSource = DruidDataSourceFactory.createDataSource(properties);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static DataSource getDataSource(){
+        return dataSource;
+    }
+
+    /**
+     *  Class.forName("com.mysql.jdbc.Driver");
+     *  connection = DriverManager.getConnection("", "", "");
+     *  今后获取连接使用下面代码即可，不要自己去getConnection
+     *  因为上面没有数据库连接池
+     * @return
+     * @throws SQLException
+     */
+    public static Connection getConnection() throws SQLException {
+        return dataSource.getConnection();
+    }
+}
+```
+
+这里面我们巧妙的利用了类加载器来帮助我们找到对应的配置文件信息，类加载器加载类找到package。
+
+#### 2.2.9.2Dbutils
+
+##### 2.2.9.2.1关于传不传datasource的讨论
+
+如果不传datasource，那么你需要传一个connection，那么就需要自己去手动关闭connection
+
+如果传了datasource，那么就不需要自己去手动关闭connection
+
+### 2.2.10案例2：登录
+
+```java
+//loginservlet
+@WebServlet("/login")
+public class LoginServlet extends HttpServlet {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        response.setContentType("text/html;charset=utf-8");
+        String username = request.getParameter("username");
+        String password = request.getParameter("password");
+        if("admin".equals(username) && "admin".equals(password)){
+            //登录成功，写入session域
+            request.getSession().setAttribute("username", username);
+            response.getWriter().println("登录成功，即将跳转");
+            response.setHeader("refresh","2;url=" + request.getContextPath() + "/info");
+        }
+    }
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+
+    }
+}
+```
+
+```java
+@WebServlet("/info")
+public class InfoServlet extends HttpServlet {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {}
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        response.setContentType("text/html;charset=utf-8");
+        String username = (String) request.getSession().getAttribute("username");
+        response.getWriter().println("欢迎您，" + username);
+    }
+}
+```
+
+
+
+## 3、JSP
+
+>jsp的特点：
+>
+>1.就可以把jsp当做html来对待，但是它相较于html还有很大的优势
+>
+>2.这里面可以嵌套java代码，然后显示动态数据
+>
+>3.java代码不可以随意的书写，需要在特殊的标签里才有效
+
+## 3.1jsp语法
+
+### 3.1.1jsp表达式
+
+```jsp
+ <%=new Date()%>
+```
+
+jsp表达式里面的java代码，会原封不动地被out.print方法包裹起来。最终翻译过后要符合java的语法。
+
+```java
+out.print(new Date());
+```
+
+### 3.1.2jsp脚本片段
+
+```jsp
+<%
+//完全可以写java注释
+/**
+* 多行注释也ok
+*/
+System.out.println("脚本片段");
+%>
+```
+
+```jsp
+<%
+for (int i = 0; i < 10; i++) {
+out.print(i);
+%>
+<h1>hello world</h1>
+<%
+}
+%>
+```
+
+### 3.1.3jsp声明
+
+```jsp
+<%!
+//jsp声明
+private String name = "zhangsan";
+%>
+```
+
+### 3.1.4jsp注释
+
+是写在主体区域里面的，不能嵌套在jsp表达式、脚本片段、声明这些里面，只能写在页面的主体部分。
+
+![](img/jsp1.png)
+
+html注释会原封不动的翻译到客户端。
+
+jsp注释，在翻译称为java代码时，就会消失。
+
+## 3.2jsp九大对象
+
+在service方法内部会创建出来9个对象，可以直接供我们来使用。默认情况下只能看到8个，如果想看到第9个，需要设置isErrorPage=true
+
+```jsp
+<%@ page isErrorPage="true" contentType="text/html;charset=UTF-8" language="java" %>
+```
+
+>Request
+>
+>Response
+>
+>pageContext
+>
+>Session
+>
+>Exception
+>
+>Application--servletContext
+>
+>Config
+>
+>Out
+>
+>Page
+
+### 3.2.1pageContext对象
+
+> 九大对象中最为核心的一个对象。通过该对象可以获得其他八个对象。
+
+#### 3.2.1.1API
+
+本身也是一个域。Request、session、application。
+
+该域大小是当前页面内
+
+```JSP
+<%
+//通过该对象可以获得其他八个对象
+pageContext.getRequest();
+pageContext.setAttribute("name", "page");
+%>
+<%
+String name = (String)pageContext.getAttribute("name")
+System.out.println(name);
+%>
+```
+
+2.可以给其他域赋值
+
+````jsp
+pageContext.setAttribute("name", "page", PageContext.PAGE_SCOPE);
+pageContext.setAttribute("name", "request", PageContext.REQUEST_SCOPE);
+pageContext.setAttribute("name", "session", PageContext.SESSION_SCOPE);
+pageContext.setAttribute("name", "application", PageContext.APPLICATION_SCOPE);
+````
+
+```jsp
+<%=pageContext.getAttribute("name")%>
+<%=request.getAttribute("name")%>
+<%=session.getAttribute("name")%>
+<%=application.getAttribute("name")%>--%>
+```
+
+```jsp
+request.getRequestDispatcher("/page.jsp").forward(request, response);
+```
+
+1.首先，在当前页面不用转发，直接打印
+
+```jsp
+<%=pageContext.findAttribute("name")%>
+```
+
+显示的是page
+
+2.调用转发，然后在被转发页面打印该语句，显示的是request
+
+3.直接访问被转发页面page.jsp，打印的是session
+
+4.在page.jsp中调用session.invalidate，打印的是application
+
+得出结论：
+
+一级一级去查找。从最小域pageContext域开始，依次request、session、application域去查找，在某个域找到数据则结束，找不到则接着下一个
+
+### 3.2.2out对象
+
+输出数据到客户端。带有缓存功能的Writer。
+
+冲洗条件：
+
+1.buffer缓冲区满
+
+2.关闭buffer缓冲区
+
+3.页面需要响应
+
+## 4、Listener监听器
+
+Web：
+
+监听对象：ServletContext
+
+监听事件：context创建和销毁
+
+监听器：自己编写的一个监听器
+
+触发事件：监听器里面的代码执行
+
+### 4.1如何去编写一个listener呢
+
+1.编写一个类实现ServletContextListener接口
+
+2.注册该Listener
+
+```java
+@WebListener
+public class MyServletContextListener implements ServletContextListener {
+    @Override
+    public void contextInitialized(ServletContextEvent servletContextEvent) {
+        System.out.println("context init");
+        ServletContext servletContext = servletContextEvent.getServletContext();
+        //context域
+        //读取配置文件等操作，将参数放入context域中
+        //比如配置了xxx.properties
+    }
+    @Override
+    public void contextDestroyed(ServletContextEvent servletContextEvent) {
+        System.out.println("context destroy");
+
+    }
+}
+
+```
+
+### 4.2回调案例
+
+员工老板。员工工作工作完成之后汇报给老板。
+
+```java
+public interface Leader {
+
+    void report();
+}
+```
+
+```java
+public class Boss implements Leader {
+
+    public void report(){
+        System.out.println("工作完成，向老板汇报");
+    }
+}
+
+```
+
+```java
+public class Manager implements Leader {
+    @Override
+    public void report() {
+        System.out.println("工作完成，向总经理汇报");
+    }
+}
+```
+
+```java
+public class Employee {
+
+    private Leader leader;
+
+    public Employee(Leader leader) {
+        this.leader = leader;
+    }
+
+    public void work(){
+        System.out.println("员工在工作");
+        leader.report();
+    }
+}
+```
+
+测试
+
+```java
+public class Test {
+
+    public static void main(String[] args) {
+        //Leader leader = new Boss();
+        Leader leader = new Manager();
+        // listener注册然后将其注入到context中
+        Employee employee = new Employee(leader);
+        // context.init()---内部 listener.contextInitialized
+        employee.work();
+    }
+}
+```
+
+![](img/listener1.png)
+
+## 5、Filter过滤器
+
+### 5.1filter的功能
+
+1.可以设置拦截或者放行(验证，是否登录，info页面仅登录可用)
+
+2.可以在请求到达servlet之前修改request对象，也可以在响应之后修改response对象（字符编码格式）
+
+### 5.2如何编写Filter
+
+1.编写一个类实现javax.servlet.Filter接口
+
+2.注册该filter(先在web.xml中根据提示完成)
+
+
+
+### 5.3Filter的生命周期
+
+1.Init：随着应用的启动而实例化
+
+2.doFilter：每访问一次filter，就会执行该方法一次
+
+3.Destroy：应用的卸载或者服务器关闭
+
+### 5.4Servlet和filter如何关联在一起
+
+最简单的方式就是通过url-pattern。servlet和filter设置相同的url-pattern。
+
+为什么没有报错？
+
+不是说url-pattern不可以设置相同的嘛？为什么filter和servlet设置同一个url-pattern不会报错？
+
+不可以设置相同的url-pattern是因为针对的是servlet。servlet从功能上来说，是开发动态web资源，做出响应的，如果多个servlet配置了相同url-pattern，究竟应该选择哪个来执行呢？
+
+但是filter功能上来说，和servlet完全不同，filter定位拦截、过滤，而不是做出响应。
+
+更多的是功能上的一个差异。功能上的一个定义。
+
+```
+<filter>
+<filter-name>firstFilter</filter-name>
+<filter-class>FilterDemo</filter-class>
+</filter>
+<filter-mapping>
+<filter-name>firstFilter</filter-name>
+<url-pattern>/*</url-pattern>
+</filter-mapping>
+```
+
+#### 5.4.1filter和servlet设置相同url-pattern,servlet代码不执行
+
+为什么呢？
+
+filter默认执行的是拦截操作，如果想要放行代码往下执行，必须要有这句话
+
+```java
+@Override
+public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+	servletResponse.setContentType("text/html;charset=utf-8");
+	System.out.println("生命周期doFilter");
+	//这行代码对于filter放行代码来说至关重要
+	filterChain.doFilter(servletRequest, servletResponse);
+}
+```
+
+此时filter和servlet的代码均会被执行到
+
+例子：
+
+```java
+//@WebFilter
+public class FilterDemo implements Filter {
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+        System.out.println("生命周期init");
+    }
+
+    @Override
+    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+        servletResponse.setContentType("text/html;charset=utf-8");
+        System.out.println("生命周期doFilter");
+        //这行代码对于filter放行代码来说至关重要
+        filterChain.doFilter(servletRequest, servletResponse);
+    }
+
+    @Override
+    public void destroy() {
+        System.out.println("生命周期destroy");
+
+    }
+}
+```
+
+#### 5.4.2filter可以设置/*吗？
+
+可以的。不会存在servlet的那些诸多烦恼。但是filter一般不会设置/。
+
