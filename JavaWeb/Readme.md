@@ -2,10 +2,21 @@
 
 ## 目录
 
-- [JavaWeb](#javaweb)
-  * [1.文件上传](#1文件上传)
+  * [目录](#目录)
+  * [1、文件上传](#1文件上传)
     + [保存数据到bean中](#保存数据到bean中)
       - [优化版：](#优化版)
+  * [2、会话技术](#2会话技术)
+  * [2.1 Cookie](#21-Cookie)
+    + [2.1.1案例1：](#211案例1)
+    + [2.1.2案例2：](#212案例2)
+    + [2.1.3cookie的设置](#213cookie的设置)
+      - [2.1.3.1 设置MaxAge](#2131-设置MaxAge)
+      - [2.1.3.2 设置path](#2132-设置path)
+      - [2.1.3.3 设置domain](#2133-设置domain)
+    + [2.1.4 cookie细节](#214-cookie细节)
+  * [2.2 Session](#22-session)
+    + [2.2.1 Session的使用](#221-Session的使用)
 
 ## 1、文件上传
 
@@ -508,6 +519,7 @@ public class ServletSession extends HttpServlet {
 请求头中包含了Cookie请求头，此时响应头中没有再次响应set-Cookie了
 
 原因在于cookie请求头中返回的JSESSIONID是一个有效的session id，服务器根据id找到了对应的session对象
+<<<<<<< HEAD
 
 关闭浏览器重新打开，你会发现此时又重新生成了一个新的session
 
@@ -1168,4 +1180,272 @@ public class FilterDemo implements Filter {
 #### 5.4.2filter可以设置/*吗？
 
 可以的。不会存在servlet的那些诸多烦恼。但是filter一般不会设置/。
+
+#### 5.4.3filter的调用顺序
+
+1.对于在web.xml中声明的filter，满足如下规律：
+
+首先看能够处理当前请求的filter有哪些，其次再看
+
+mapping声明的先后顺序，就是最终的调用顺序。
+
+2.对于注解的方式，顺序是类名首字母的ASCII先后顺序。
+
+AFilter  SFilter，先A后S
+
+### 5.5整个请求的处理流程
+
+比如一个叫做ROOT的应用，里面配置servlet，url-pattern叫做/servlet，同时配置了两个filter，一个AFilter叫做/*，一个BFilter叫做/servlet。都是采用注解的方式。
+
+当访问如下请求时
+
+http://localhost:8080/servlet
+
+执行流程如下：
+
+1.浏览器地址栏输入如下地址，构建一个请求报文
+
+2.请求报文传输到指定机器的指定端口8080端口
+
+3.被connector接收到，然后将其转成request对象，同时生成一个response对象
+
+4.这两个对象被传给engine，engine挑选host来处理该请求
+
+5.将这两个对象传给选好的host，host选择合适的Context来处理
+
+6.这两个对象传给Context，请求的资源/servlet，Context根据请求的资源在当前应用下寻找合适的组件来处理该请求
+
+7.首先先查找filter，哪些filter可以处理(匹配)该请求，将这两个filter按照一定的顺序组成一个链表
+
+8.接下来去查找servlet，匹配到对应的servlet，然后将servlet添加到filter的链后面
+
+9.接下来依次调用链上的组件，然后将request和response依次穿进去，先执行filter接下来执行servlet，然后执行完毕，返回
+
+10.connector读取reponse里面的数据生成响应报文
+
+## 6、JSON
+
+需要记住一点：{}表示的是一个对象，[]表示的是一个数组或者集合。
+
+### 6.1java语言如何操作json
+
+前后端分离的概念。页面和数据分别来自于两个不同的系统。
+
+比如一个项目：页面内来自于localhost:8080,数据来自于localhost:8084，
+
+java语言提供对应页面所需要的数据。
+
+数据返回就是以json字符串的形式来返回
+
+{"name":"zhangsan", "age": 24}
+
+可以用一个网站来校验besjon.com
+
+专门用来校验json字符串。
+
+```java
+public static void main(String[] args) {
+Person person = new Person();
+person.setName("zhangsan");
+person.setAge(24);
+//需要把person对象转成json字符串
+//var person = {"name": "zhangsan", "age": 24}
+String perStr = "{\"name\":\"" + person.getName() + "\", \"age\": " + person.getAge() + "}";
+System.out.println(perStr);
+}
+```
+
+使用工具类来完成这些操作。
+
+Gson google json解析工具 
+
+Fastjson alibaba
+
+Jackson SpringMVC框架内置
+
+不管怎么样，完成的功能都是一样的。
+
+下面利用Gson:
+
+```java
+public static void main(String[] args) {
+Person person = new Person();
+person.setName("zhangsan");
+person.setAge(24);
+Person person2 = new Person();
+person2.setName("lisi");
+person2.setAge(22);
+List<Person> people = new ArrayList<>();
+people.add(person);
+people.add(person2);
+//将java对象转成json字符串
+Gson gson = new Gson();
+String s = gson.toJson(person);
+System.out.println(s);
+String s1 = gson.toJson(people);
+System.out.println(s1);
+
+//{"name":"zhangsan","age":24}
+//[{"name":"zhangsan","age":24},{"name":"lisi","age":22}]
+}
+```
+
+其他操作：json数组转化为json对象
+
+```java
+public static void main(String[] args) {
+//{"name":"zhangsan","age":24}
+//[{"name":"zhangsan","age":24},{"name":"lisi","age":22}]
+String person = "{\"name\":\"zhangsan\",\"age\":24}";
+String people = "[{\"name\":\"zhangsan\",\"age\":24},{\"name\":\"lisi\",\"age\":22}]";
+//将json字符串转成对应的java类型
+Gson gson = new Gson();
+Person person1 = gson.fromJson(person, Person.class);
+System.out.println(person1);
+//如何将一个数组对象的数据转成List对象的java数据类型
+//1.
+JsonElement jsonElement = new JsonParser().parse(people);
+//根据json字符串最外侧是[]还是{}灵活的去选择getAsJsonArray还是getAsJsonObject
+JsonArray jsonArray = jsonElement.getAsJsonArray();
+List<Person> personList = new ArrayList<>();
+for (JsonElement element : jsonArray) {
+Person p = gson.fromJson(element, Person.class);
+personList.add(p);
+System.out.println(p);
+}
+//personlist --- JDBC
+}
+```
+
+## 7、MVC
+
+### 7.1注册案例
+
+```json
+public class StringUtils {
+    public static boolean isEmpty(String s) {
+        if(s == null || "".equals(s.trim())){
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+再写一个User类对象(此处省略)
+
+再写一个filter过滤
+
+```json
+@WebServlet("/register")
+public class RegisterServlet extends HttpServlet {
+protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+//注册，注册的信息保存到json文件中
+//取出参数，判断用户名是否一致
+String username = request.getParameter("username");
+String password = request.getParameter("password");
+String confirmPassword = request.getParameter("confirmPassword");
+//校验 是否为空 密码确认密码是否一致
+if(StringUtils.isEmpty(username) || StringUtils.isEmpty(password)||
+StringUtils.isEmpty(confirmPassword)){
+response.getWriter().println("参数不能为空");
+return;
+}
+if(!password.equals(confirmPassword)){
+response.getWriter().println("两次密码不一致，请确认");
+return;
+}
+User user = new User();
+user.setUsername(username);
+user.setPassword(password);
+//封装对象
+InputStream inputStream = RegisterServlet.class.getClassLoader().getResourceAsStream("user.json");
+//形成一个字符串就行了
+ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+byte[] bytes = new byte[1024];
+int length = 0;
+while ((length = inputStream.read(bytes))!= -1){
+byteArrayOutputStream.write(bytes, 0, length);
+}
+String jsonStr = byteArrayOutputStream.toString("utf-8");
+Gson gson = new Gson();
+List<User> userList = new ArrayList<>();
+if(!"".equals(jsonStr)){
+JsonElement jsonElement = new JsonParser().parse(jsonStr);
+JsonArray jsonArray = jsonElement.getAsJsonArray();
+for (JsonElement element : jsonArray) {
+User u = gson.fromJson(element, User.class);
+//判断是否存在当前用户名
+if(u.getUsername().equals(username)){
+response.getWriter().println("当前用户名已经存在");
+return;
+}
+userList.add(u);
+}
+}
+userList.add(user);
+
+//直接写回数据到json文件中
+String information = gson.toJson(userList);
+//把这个字符串写回user.json文件中
+String file = RegisterServlet.class.getClassLoader().getResource("user.json").getFile();
+FileOutputStream fileOutputStream = new FileOutputStream(file);
+fileOutputStream.write(information.getBytes("utf-8"));
+response.getWriter().println("注册成功，即将跳转至登录页");
+//json文件中是否存在这个用户名
+//没有用户名才注册
+}
+
+protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+
+}
+```
+
+//先把以前的写入到一个输出流中，转化为字符串，放入List，转化为对象，看看新的和以前的重复不重复，如果不重复那就再写入
+
+### 7.2MVC
+
+>数据模型（Model）：封装的是数据模型和所有基于对这些数据的操作。在一个组件中，Model往往表示组件的状态和操作状态的方法。
+>
+>视图（View）：封装的是对数据Model的一种显示。一个模型可以由多个视图，而一个视图理论上也可以同不同的模型关联起来。
+>
+>控制器（Control）：封装的是外界作用于模型的操作,  通常，这些操作会转发到模型上，并调用模型中相应的一个或者多个方法。一般Controller在Model和View之间起到了沟通的作用，处理用户在View上的输入，并转发给Model。这样Model和View两者之间可以做到松散耦合，甚至可以彼此不知道对方，而由Controller连接起这两个部分。
+
+
+
+user对象属于model，对user对象的所有操作：比如注册、判断用户名是否存在、登录，这些都是对于user对象的操作。也算model。
+
+View：对数据模型的显示。用户个人页面：显示的就是user的信息。Jsp。
+
+Controller：中转站。中间人。请求到来以后，控制器做一些处理，比如校验，之后调用model的一个或者多个方法，接下来model返回结果，根据结果的不同，调用不同的视图。model和view之间就不会产生任何的影响。
+
+### 7.3三层架构
+
+接下来，需要将MVC进一步优化，这里面其实还有很大可优化的空间？如果方法很多，需要将每个方法里面的之前的model全部换成新的model，更改的地方还是很多。
+
+仔细地去体会一下，为什么仅需要去修改类名，而不需要去修改方法名称以及返回值，因为我们是刻意这么做的，因为这样做的话修改的地方最少。潜意识里去做一个标准。
+
+为何不用天生就适合做标准的呢？？？？？？？？？接口。
+
+使用接口，不管是Json还是Mysql，其实都是在操作数据，又可以给它们重新取一个名字，叫做DAO，Data Access Object。
+
+三层架构，究竟是哪三层呢？
+
+说法很多，展示层、业务层service、数据层dao
+
+ Controller、service、dao
+
+有一个疑惑：
+
+感觉有controller和dao已经可以实现功能了，为什么还需要有service呢？
+
+对于一些逻辑非常简单的模块，没有service感觉没有任何影响，但是
+
+如果对于一些业务逻辑比较复杂的模块，service就体现出它的功能了。
+
+比如分页查询数据结果。
+
+分页显示图中数据。
+
+一共多少条记录，每页多少条，一共多少页，同时展示当前页应该显示的数据条目。
 
